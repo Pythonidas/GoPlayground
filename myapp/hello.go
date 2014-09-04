@@ -1,10 +1,13 @@
-package hello
+package guestbook
 
 import (
-	"datastore"
-	"fmt"
 	"html/template"
 	"net/http"
+	"time"
+
+	"appengine"
+	"appengine/datastore"
+	"appengine/user"
 )
 
 type Greeting struct {
@@ -18,21 +21,54 @@ func init() {
 	http.HandleFunc("/sign", sign)
 }
 
-func root(w http.ResponseWriter, r *http.Request) {
+// guestbookKey returns the key used for all guestbook entries.
+func guestbookKey(c appengine.Context) *datastore.Key {
 
-	fmt.Fprint(w, guestbookForm)
-
+	// The string "default_guestbook" here could be varied to have multiple guestbooks.
+	return datastore.NewKey(c, "Guestbook", "default_guestbook", 0, nil)
 }
 
-const guestbookForm = `
+func root(w http.ResponseWriter, r *http.Request) {
+
+	c := appengine.NewContext(r)
+
+	// Ancestor queries, as shown here, are strongly consistent with the High
+	// Replication Datastore. Queries that span entity groups are eventually
+	// consistent. If we omitted the .Ancestor from this query there would be
+	// a slight chance that Greeting that had just been written would not
+	// show up in a query.
+	q := datastore.NewQuery("Greeting").Ancestor(guestbookKey(c)).Order("-Date").Limit(10)
+	greetings := make([]Greeting, 0, 10)
+	if _, err := q.GetAll(c, &greetings); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := guestbookTemplate.Execute(w, greetings); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+var guestbookTemplate = template.Must(template.New("book").Parse(`
 <html>
-   <body>
-     <form action="/sign" method="post">
-       <div><textarea name="content" rows="3" cols="60"></textarea></div>
-       <div><input type="submit" value="Sign Guestbook"></div>
-     </form>
-   </body>
-</html>`
+  <head>
+    <title>Go Guestbook</title>
+  </head>
+  <body>
+    {{range .}}
+      {{with .Author}}
+        <p><b>{{.}}</b> wrote:</p>
+      {{else}}
+        <p>An anonymous person wrote:</p>
+      {{end}}
+      <pre>{{.Content}}</pre>
+    {{end}}
+    <form action="/sign" method="post">
+      <div><textarea name="content" rows="3" cols="60"></textarea></div>
+      <div><input type="submit" value="Sign Guestbook"></div>
+    </form>
+  </body>
+</html>
+`))
 
 func sign(w http.ResponseWriter, r *http.Request) {
 	c := appengine.NewContext(r)
@@ -58,13 +94,3 @@ func sign(w http.ResponseWriter, r *http.Request) {
 
 	http.Redirect(w, r, "/", http.StatusFound)
 }
-
-var signTemplate = template.Must(template.New("sign").Parse(signTemplateHTML))
-
-const signTemplateHTML = `
-<html>
-  <body>
-    <p>You Wrote:</p>
-    <p>{{.}}</p>
-  </body>
-</html>`
