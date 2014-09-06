@@ -58,7 +58,7 @@ var guestbookTemplate = template.Must(template.New("book").Parse(`
       {{with .Author}}
         <p><b>{{.}}</b> wrote:</p>
       {{else}}
-        <p>An anonymous person wrote:</p>
+        <p>An anonymous cyborg wrote:</p>
       {{end}}
       <pre>{{.Content}}</pre>
     {{end}}
